@@ -214,6 +214,10 @@ if args.multi_gpus:
 tokenizer = BertTokenizer.from_pretrained('/nfsfile/niuhao/.fastNLP/embedding/bert-base-uncased')
 
 for name, ds in tqdm(data_bundle.iter_datasets()):
+    exist_file = [file for file in os.listdir('/nfsfile/niuhao/project/html_www2020/MAECdata/MAEC_Dataset_aspect/'+ name)]
+    if 'maec_flt_pkls.pkl' in exist_file:
+        continue
+
     name_dir = allembeds[name]
     tr_data = DataSetIter(
         data_bundle.get_dataset(name),
