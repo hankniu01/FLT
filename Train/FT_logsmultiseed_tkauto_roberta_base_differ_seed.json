@@ -1,0 +1,101 @@
+{
+    "dataset": "alldataset",
+    "data_dir": "/nfsfile/niuhao/project/aspect_process_for_thesis/FLT/Dataset",
+    "lr": 1e-05,
+    "model_name": "bert-en-base-uncased",
+    "save_embed": 1,
+    "batch_size": 32,
+    "multi_gpus": false,
+    "seed": 1234,
+    "gnn": "attgcn",
+    "layers": 1,
+    "metric_type": "att",
+    "attention_heads": 1,
+    "h_dim": 60,
+    "combination": "multi_conj",
+    "n_components": 20,
+    "gumbel_temprature": 1,
+    "gumbel_decay": 1e-05,
+    "dist_threshold": 0.65,
+    "pass_type": "high",
+    "start_freq": 8,
+    "n_pass": 10,
+    "q_pass": 10,
+    "k_pass": 10,
+    "bond_q_pass": 10,
+    "bond_k_pass": 10,
+    "freq_type": "tkauto",
+    "step": 0,
+    "lr_for_selector": 0.005,
+    "probe_layers": "-1",
+    "result_file": "multiseed_tkauto_roberta_base_differ_seed.json",
+    "chpt_dir": "tkauto_best_rbtbase",
+    "max_len": 120,
+    "sparse_hold": 0.5,
+    "pca_k": 2,
+    "gnn_or_mlp": "gnn",
+    "result_save_path": "/nfsfile/niuhao/project/aspect_process_for_thesis/FLT/Train/FT_logsmultiseed_tkauto_roberta_base_differ_seed.json"
+}{
+    "best_eval": {
+        "AccuracyMetric": {
+            "acc": 0.749796
+        },
+        "ClassifyFPreRecMetric": {
+            "f": 0.722733,
+            "pre": 0.72111,
+            "rec": 0.735924
+        }
+    },
+    "best_epoch": 2,
+    "best_step": 373
+}{
+    "dataset": "alldataset",
+    "data_dir": "/nfsfile/niuhao/project/aspect_process_for_thesis/FLT/Dataset",
+    "lr": 1e-05,
+    "model_name": "bert-en-base-uncased",
+    "save_embed": 1,
+    "batch_size": 32,
+    "multi_gpus": false,
+    "seed": 1234,
+    "gnn": "attgcn",
+    "layers": 1,
+    "metric_type": "att",
+    "attention_heads": 1,
+    "h_dim": 60,
+    "combination": "multi_conj",
+    "n_components": 20,
+    "gumbel_temprature": 1,
+    "gumbel_decay": 1e-05,
+    "dist_threshold": 0.65,
+    "pass_type": "high",
+    "start_freq": 8,
+    "n_pass": 10,
+    "q_pass": 10,
+    "k_pass": 10,
+    "bond_q_pass": 10,
+    "bond_k_pass": 10,
+    "freq_type": "tkauto",
+    "step": 0,
+    "lr_for_selector": 0.005,
+    "probe_layers": "-1",
+    "result_file": "multiseed_tkauto_roberta_base_differ_seed.json",
+    "chpt_dir": "tkauto_best_rbtbase",
+    "max_len": 120,
+    "sparse_hold": 0.5,
+    "pca_k": 2,
+    "gnn_or_mlp": "gnn",
+    "result_save_path": "/nfsfile/niuhao/project/aspect_process_for_thesis/FLT/Train/FT_logsmultiseed_tkauto_roberta_base_differ_seed.json"
+}{
+    "best_eval": {
+        "AccuracyMetric": {
+            "acc": 0.781224
+        },
+        "ClassifyFPreRecMetric": {
+            "f": 0.756674,
+            "pre": 0.758031,
+            "rec": 0.755744
+        }
+    },
+    "best_epoch": 30,
+    "best_step": 5618
+}

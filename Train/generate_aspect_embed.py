@@ -1,9 +1,11 @@
 import argparse
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 import sys
 import warnings
 import numpy as np
 import json
+import pickle
 
 import fitlog
 import torch
@@ -21,9 +23,11 @@ from fastNLP.core.utils import (_get_model_device, _move_dict_value_to_device,
 from fastNLP.embeddings import BertWordPieceEncoder, RobertaWordPieceEncoder
 from transformers import XLMRobertaModel, XLNetModel
 
-from pipe import DataPipe
+from ec_pipe import DataPipe
 
-from aspectmodel import AspectModel, MlpModel
+from aspectmodel_save_aspect import AspectModel, MlpModel
+
+from fastNLP.modules.tokenizer import BertTokenizer, RobertaTokenizer
 
 # fitlog.debug()
 root_fp = r"/nfsfile/niuhao/project/aspect_process_for_thesis/FLT/Train"
@@ -44,12 +48,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument(
     "--dataset",
     type=str,
-    default="alldataset",
+    default="ec",
     choices=[
         "Restaurants",
         "Laptop",
         "Tweets",
         "alldataset"
+        "ec",
+        "1516"
     ],
 )
 parser.add_argument(
@@ -72,16 +78,16 @@ parser.add_argument(
     ],
 )
 parser.add_argument("--save_embed", default=1, type=int)
-parser.add_argument("--batch_size", default=32, type=int)
+parser.add_argument("--batch_size", default=1, type=int)
 parser.add_argument('--multi_gpus', default=False, type=bool)
 parser.add_argument('--seed', type=int, default=1234)
 parser.add_argument('--gnn', default='attgcn',
                     choices=['rgat', 'gcn', 'attgcn'])
-parser.add_argument('--layers', default=2, type=int)
+parser.add_argument('--layers', default=1, type=int)
 parser.add_argument('--metric_type', default='att', type=str) # defaukt= att 
 parser.add_argument('--attention_heads', default=1, type=int)   # 4
 parser.add_argument('--h_dim', default=60, type=int)  # 120   60
-parser.add_argument('--combination', default='multi', type=str, choices='multi, multi_conj, div', help='combination for att')
+parser.add_argument('--combination', default='multi_conj', type=str, choices='multi, multi_conj, div', help='combination for att')
 
 parser.add_argument('--n_components', default=20, type=int)   # 60
 
@@ -96,7 +102,7 @@ parser.add_argument('--q_pass', default=10, type=int)
 parser.add_argument('--k_pass', default=10, type=int)
 parser.add_argument('--bond_q_pass', default=10, type=int)
 parser.add_argument('--bond_k_pass', default=10, type=int)
-parser.add_argument('--freq_type', default='tkdft', type=str, choices=['ori', 'tkdft', 'tkauto'])
+parser.add_argument('--freq_type', default='tkauto', type=str, choices=['ori', 'tkdft', 'tkauto'])
 parser.add_argument('--step', default=0, type=int)
 parser.add_argument('--lr_for_selector', default=1e-3, type=float)
 parser.add_argument('--probe_layers', default='-1', type=str)
@@ -110,7 +116,12 @@ parser.add_argument('--gnn_or_mlp', default='gnn', type=str, choices=['mlp', 'gn
 
 args = parser.parse_args()
 set_seed(args.seed)
-args.data_dir = r"/nfsfile/niuhao/project/aspect_process_for_thesis/FLT/Dataset"
+
+if args.dataset == 'ec':
+    args.data_dir = r"/nfsfile/niuhao/project/html_www2020/raw_data/ReleasedDataset_mp3_aspect/"
+elif args.dataset == '1516':
+    args.data_dir = r"/nfsfile/niuhao/project/html_www2020/MAECdata/MAEC_Dataset_aspect/"
+
 
 fitlog.add_hyper_in_file(__file__)
 fitlog.add_hyper(args)
@@ -144,13 +155,13 @@ elif model_type == "xlmroberta":
     _refresh=False,
 )
 def get_data():
-    data_bundle = DataPipe(model_name=args.model_name, mask=mask).process_from_file(
-        os.path.join(args.data_dir, args.dataset)
+    data_bundle, allembeds = DataPipe(model_name=args.model_name, mask=mask).process_from_file(
+        os.path.join(args.data_dir)
     )
-    return data_bundle
+    return data_bundle, allembeds
 
 
-data_bundle = get_data()
+data_bundle, allembeds = get_data()
 
 print(data_bundle)
 
@@ -193,119 +204,36 @@ else:
         pool=pool,
     )
 
-# ckpt_path_dir = r"/nfsfile/niuhao/project/aspect_process_for_thesis/FLT/Train/tkauto_best_rbtbase/best_AspectModel_acc_2024-06-15-06-00-21-326676"
-# model = torch.load(ckpt_path_dir)
+ckpt_path_dir = r"/nfsfile/niuhao/project/aspect_process_for_thesis/FLT/Train/tkauto_best_rbtbase/best_AspectModel_acc_2024-06-15-06-21-20-440968"
+model.load_state_dict(torch.load(ckpt_path_dir).state_dict())
+model = model.cuda()
 
 if args.multi_gpus:
     model = nn.DataParallel(model, device_ids=[0,1])
 
-no_decay = ["bias", "LayerNorm.weight"]
-optimizer_grouped_parameters = [
-    {
-        "params": [
-            p
-            for n, p in model.named_parameters()
-            if not any(nd in n for nd in no_decay) and 'selector' not in n
-        ],
-        "weight_decay": 1e-2,
-        "lr": args.lr
-    },
-    {
-        "params": [
-            p for n, p in model.named_parameters() if any(nd in n for nd in no_decay) and 'selector' not in n
-        ],
-        "weight_decay": 0.0,
-        "lr": args.lr
-    },
-    {
-        "params": [
-            p for n, p in model.named_parameters() if 'selector' in n
-        ],
-        "weight_decay": 0.0,
-        "lr": args.lr_for_selector,
-    }
-]
-optimizer = optim.AdamW(optimizer_grouped_parameters)
+tokenizer = BertTokenizer.from_pretrained('/nfsfile/niuhao/.fastNLP/embedding/bert-base-uncased')
 
-callbacks = []
-callbacks.append(WarmupCallback(0.01, "constant"))
-callbacks.append(FitlogCallback())
+for name, ds in tqdm(data_bundle.iter_datasets()):
+    name_dir = allembeds[name]
+    tr_data = DataSetIter(
+        data_bundle.get_dataset(name),
+        num_workers=1,
+    )
 
+    for batch in tr_data:
+        sent_key = ' '.join(batch[0]['raw_tokens'].squeeze().tolist())
+        _, aspect_embed = model(batch[0]["tokens"].cuda(), batch[0]["aspect_mask"].cuda())
+        name_dir[sent_key] += [aspect_embed.cpu().detach()]
 
-class SmoothLoss(LossBase):
-    def __init__(self, smooth_eps=0):
-        super().__init__()
-        self.smooth_eps = smooth_eps
-
-    def get_loss(self, pred, target):
-        """
-
-        :param pred: bsz x 3
-        :param target: bsz,
-        :return:
-        """
-        n_class = pred.size(1)
-        smooth_pos = target.eq(n_class)
-        target = target.masked_fill(smooth_pos, 0)
-        target_matrix = torch.full_like(
-            pred, fill_value=self.smooth_eps / (n_class - 1)
-        )
-        target_matrix = target_matrix.scatter(
-            dim=1, index=target.unsqueeze(1), value=1 - self.smooth_eps
-        )
-        target_matrix = target_matrix.masked_fill(
-            smooth_pos.unsqueeze(1), 1.0 / n_class
-        )
-
-        pred = F.log_softmax(pred, dim=-1)
-        loss = -(pred * target_matrix).sum(dim=-1).mean()
-        return loss
-
-
-
-tr_data = DataSetIter(
-    data_bundle.get_dataset("train"),
-    num_workers=2,
-    batch_sampler=ConstantTokenNumSampler(
-        data_bundle.get_dataset("train").get_field("seq_len").content,
-        max_token=2000,
-        num_bucket=10,
-    ),
-)
-
-
-trainer = Trainer(
-    tr_data,
-    model,
-    result_save_path=args.result_save_path,
-    optimizer=optimizer,
-    loss=SmoothLoss(smooth_eps),
-    batch_size=args.batch_size,
-    sampler=BucketSampler(),
-    drop_last=False,
-    update_every=32 // args.batch_size,
-    num_workers=2,
-    n_epochs=n_epochs,
-    print_every=5,
-    dev_data=data_bundle.get_dataset("test"),
-    test_data=data_bundle.get_dataset("test"),
-    metrics=[AccuracyMetric(), ClassifyFPreRecMetric(f_type="macro")],
-    metric_key=None,
-    validate_every=-1,
-    save_path='/nfsfile/niuhao/project/aspect_process_for_thesis/FLT/Train/' +  args.chpt_dir,
-    use_tqdm=False,
-    device=0,
-    callbacks=callbacks,
-    check_code_level=0,
-    test_sampler=SortedSampler(),
-    test_use_tqdm=False
-)
-
-trainer.train(load_best_model=True)
+    if args.dataset == 'ec':
+        f = open('/nfsfile/niuhao/project/html_www2020/raw_data/ReleasedDataset_mp3_aspect/'+ name + '/ec_flt_pkls.pkl', 'wb')
+    elif args.dataset == '1516':
+        f = open('/nfsfile/niuhao/project/html_www2020/MAECdata/MAEC_Dataset_aspect/'+ name + '/maec_flt_pkls.pkl', 'wb')
+    
+    pickle.dump(name_dir, f)
 
 
 if args.save_embed:
-    fitlog.add_other(trainer.start_time, name="start_time")
     os.makedirs(f"{root_fp}/" +  args.chpt_dir, exist_ok=True)
     folder = f"{root_fp}/{args.chpt_dir}/{model_type}-{args.dataset}-FT"
     count = 0

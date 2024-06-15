@@ -72,7 +72,7 @@ class AspectModel(nn.Module):
         fmask = (torch.ones_like(tokens) != tokens).float()
         mask_ = fmask.unsqueeze(-1)@fmask.unsqueeze(1)
         if isinstance(self.embed, BertWordPieceEncoder):
-            tokens = self.embed(tokens, None) # bsz x max_len x hidden_size
+            tokens = self.embed(tokens, None)  # bsz x max_len x hidden_size
         else:
             tokens, hidden_states = self.embed(
                 tokens, token_type_ids=None
@@ -144,8 +144,8 @@ class AspectModel(nn.Module):
         #     preds_g, _ = tokens_g.max(dim=1)
         
         # preds = preds + preds_g
-        preds = self.ffn(preds)
-        return {"pred": preds}
+        preds_ = self.ffn(preds)
+        return preds_, preds
 
 
 

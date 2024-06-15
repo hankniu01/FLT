@@ -1,6 +1,8 @@
 import json
 import os
 import warnings
+import pickle
+from tqdm import tqdm
 
 warnings.filterwarnings("ignore")
 
@@ -54,8 +56,11 @@ class DataPipe(Pipe):
         else:
             cls = self.tokenizer.cls_token
             sep = self.tokenizer.sep_token
-        for name, ds in data_bundle.iter_datasets():
+
+        allembeds = {}
+        for name, ds in tqdm(data_bundle.iter_datasets()):
             new_ds = DataSet()
+            allembeds[name] = {}
             for ins in ds:
                 tokens = ins["tokens"]
                 if not isinstance(self.tokenizer, XLNetTokenizer):
@@ -67,6 +72,7 @@ class DataPipe(Pipe):
                     tokens.append(cls)
                     shift = 0
 
+                allembeds[name][' '.join(tokens)] = []
 
                 for aspect in ins["aspects"]:
                     target = aspect["polarity"]
@@ -87,6 +93,7 @@ class DataPipe(Pipe):
                         pieces.extend(bpes)
                         piece_masks.extend([mask] * (len(bpes)))
                     new_ins = Instance(
+                        raw_tokens = tokens,
                         tokens=pieces,
                         target=target,
                         aspect_mask=piece_masks,
@@ -94,13 +101,15 @@ class DataPipe(Pipe):
                     )
                     new_ds.append(new_ins)
             new_bundle.set_dataset(new_ds, name)
+            # if new_bundle.num_dataset > 10:
+            #     break
 
         target_vocab = Vocabulary(padding=None, unknown=None)
         target_vocab.add_word_lst(["neutral", "positive", "negative", "smooth"])
-        target_vocab.index_dataset(*new_bundle.datasets.values(), field_name="target")
+        # target_vocab.index_dataset(*new_bundle.datasets.values(), field_name="target")
 
         new_bundle.set_target("target")
-        new_bundle.set_input("tokens", "aspect_mask", "raw_words")
+        new_bundle.set_input("tokens", "aspect_mask", "raw_words", "raw_tokens")
         new_bundle.apply_field(
             lambda x: len(x), field_name="tokens", new_field_name="seq_len"
         )
@@ -112,12 +121,13 @@ class DataPipe(Pipe):
             new_bundle.set_pad_val("tokens", self.tokenizer.pad_index)
         new_bundle.set_vocab(target_vocab, "target")
 
-        return new_bundle
+        return new_bundle, allembeds
 
     def process_from_file(self, paths) -> DataBundle:
         data_bundle = DataLoader().load(paths)
-        return self.process(data_bundle)
+        new_bundle, allembeds = self.process(data_bundle)
 
+        return new_bundle, allembeds
 
 class DataLoader(Loader):
     def __init__(self):
@@ -134,20 +144,29 @@ class DataLoader(Loader):
         :return:
         """
         data_bundle = DataBundle()
-        folder_name = os.path.basename(paths)
-        fns = [f"Test.json", f"Train.json"]
-
-        for split, name in zip(["test", "train"], fns):
-            fp = os.path.join(paths, name)
-            with open(fp, "r", encoding="utf-8") as f:
-                data = json.load(f)
+        
+        for name in os.listdir(paths):
+            fp = os.path.join(paths, name, 'text_aspect.pkl')
+            with open(fp, "rb") as f:
+                data = pickle.load(f)
+            data = data['sent_aspect']
             ds = DataSet()
             for ins in data:
-                tokens = ins["token"]
+                tokens = ins["sent_spy"]
                 pos = ins["pos"]
-                dep = ins["dependencies"]
-                aspects = ins["aspects"]
+                dep = [[dtk, h, t]for t, (dtk, h) in enumerate(zip(ins["dep"], ins['head_ids']))]
+                if 'aspect' in ins.keys():
+                    aspects = [
+                        {
+                            'term': ins["aspect"].split(' '),
+                            'polarity': "positive",
+                            'from': ins["aspect_start"],
+                            'to': ins['aspect_end']
+                        }
+                    ]
+                else:
+                    aspects = []
                 ins = Instance(tokens=tokens, pos=pos, dep=dep, aspects=aspects)
                 ds.append(ins)
-            data_bundle.set_dataset(ds, name=split)
+            data_bundle.set_dataset(ds, name=name)
         return data_bundle
